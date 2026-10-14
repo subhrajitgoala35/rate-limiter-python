@@ -1,4 +1,4 @@
-
+```yaml
 version: 2.1
 
 jobs:
@@ -27,15 +27,76 @@ jobs:
       - run:
           name: Run unit tests with coverage
           command: |
-            python -m pytest tests \
+            python -m pytest tests/test_buckets.py tests/test_bucketss.py \
               --cov=app.buckets \
               --cov-report=term-missing \
               --cov-fail-under=70
+
+  integration-tests:
+    docker:
+      - image: cimg/python:3.12
+        environment:
+          DATABASE_URL: postgresql://appuser:devpassword@127.0.0.1:5432/ratelimiter
+          REDIS_URL: redis://127.0.0.1:6379/0
+      - image: cimg/postgres:16.4
+        environment:
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: ratelimiter
+      - image: cimg/redis:7.2
+
+    steps:
+      - checkout
+
+      - run:
+          name: Install dependencies
+          command: |
+            pip install -r requirements.txt
+            pip install pytest httpx
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+
+      - run:
+          name: Wait for PostgreSQL
+          command: |
+            for i in $(seq 1 30); do
+              if pg_isready -h 127.0.0.1 -U appuser -d ratelimiter; then
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "PostgreSQL did not become ready"
+            exit 1
+
+      - run:
+          name: Apply database migrations
+          command: |
+            for f in migrations/*.sql; do
+              echo "Applying migration: $f"
+              PGPASSWORD=devpassword psql \
+                -h 127.0.0.1 \
+                -U appuser \
+                -d ratelimiter \
+                -v ON_ERROR_STOP=1 \
+                -f "$f" || exit 1
+            done
+
+      - run:
+          name: Wait for Redis
+          command: |
+            python -c "import time, redis; r=redis.Redis.from_url('redis://127.0.0.1:6379/0'); [(r.ping()) for _ in range(1)]"
+
+      - run:
+          name: Run integration tests
+          command: python -m pytest tests/test_integration.py -v
 
 workflows:
   build-and-test:
     jobs:
       - lint
       - unit-tests:
+          requires:
+            - lint
+      - integration-tests:
           requires:
             - lint
