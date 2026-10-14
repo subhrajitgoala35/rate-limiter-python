@@ -1,0 +1,41 @@
+
+version: 2.1
+
+jobs:
+  lint:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install lint tools
+          command: pip install ruff
+      - run:
+          name: Run lint
+          command: ruff check app tests
+
+  unit-tests:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies and test tools
+          command: |
+            pip install -r requirements.txt
+            pip install pytest pytest-cov
+      - run:
+          name: Run unit tests with coverage
+          command: |
+            python -m pytest tests \
+              --cov=app.buckets \
+              --cov-report=term-missing \
+              --cov-fail-under=70
+
+workflows:
+  build-and-test:
+    jobs:
+      - lint
+      - unit-tests:
+          requires:
+            - lint

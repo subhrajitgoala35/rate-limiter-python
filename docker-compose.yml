@@ -1,0 +1,62 @@
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ratelimiter
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d ratelimiter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: .
+    command:
+      - sh
+      - -c
+      - |
+        for f in /app/migrations/*.sql; do
+          echo "Applying migration: $$f"
+          PGPASSWORD=devpassword psql \
+            -h postgres -U appuser -d ratelimiter \
+            -v ON_ERROR_STOP=1 -f "$$f" || exit 1
+        done
+    environment:
+      DATABASE_URL: postgresql://appuser:devpassword@postgres:5432/ratelimiter
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://appuser:devpassword@postgres:5432/ratelimiter
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
