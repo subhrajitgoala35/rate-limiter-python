@@ -1,5 +1,5 @@
-```yaml
-version: 2.1
+﻿version: 2.1
+
 
 jobs:
   lint:
@@ -38,11 +38,13 @@ jobs:
         environment:
           DATABASE_URL: postgresql://appuser:devpassword@127.0.0.1:5432/ratelimiter
           REDIS_URL: redis://127.0.0.1:6379/0
+
       - image: cimg/postgres:16.4
         environment:
           POSTGRES_USER: appuser
           POSTGRES_PASSWORD: devpassword
           POSTGRES_DB: ratelimiter
+
       - image: cimg/redis:7.2
 
     steps:
@@ -61,6 +63,7 @@ jobs:
           command: |
             for i in $(seq 1 30); do
               if pg_isready -h 127.0.0.1 -U appuser -d ratelimiter; then
+                echo "PostgreSQL is ready"
                 exit 0
               fi
               sleep 2
@@ -84,7 +87,25 @@ jobs:
       - run:
           name: Wait for Redis
           command: |
-            python -c "import time, redis; r=redis.Redis.from_url('redis://127.0.0.1:6379/0'); [(r.ping()) for _ in range(1)]"
+            python - <<'PY'
+            import time
+            import redis
+
+            client = redis.Redis.from_url(
+                "redis://127.0.0.1:6379/0",
+                socket_connect_timeout=2,
+            )
+
+            for attempt in range(30):
+                try:
+                    if client.ping():
+                        print("Redis is ready")
+                        break
+                except redis.RedisError:
+                    time.sleep(2)
+            else:
+                raise SystemExit("Redis did not become ready")
+            PY
 
       - run:
           name: Run integration tests
@@ -94,9 +115,12 @@ workflows:
   build-and-test:
     jobs:
       - lint
+
       - unit-tests:
           requires:
             - lint
+
       - integration-tests:
           requires:
             - lint
+
