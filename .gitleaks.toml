@@ -1,0 +1,10 @@
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known demo API key in historical README example"
+commits = ["401665d92860828eb32468968aa587af16ba45b9"]
+paths = ['''README\.md''']
+regexTarget = "line"
+regexes = ['''k_demo_free''']
