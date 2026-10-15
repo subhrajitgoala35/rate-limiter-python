@@ -124,3 +124,16 @@ workflows:
           requires:
             - lint
 
+      - secret-scan:
+          requires:
+            - lint
+
+        
+  secret-scan:
+    docker:
+      - image: zricethezav/gitleaks:latest
+    steps:
+      - checkout
+      - run:
+          name: Scan repository for secrets
+          command: gitleaks detect --source . --verbose --redact
