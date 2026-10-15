@@ -115,7 +115,7 @@ jobs:
       - checkout
       - run:
           name: Scan repository for secrets
-          command: gitleaks detect --source . --verbose --redact
+          command: gitleaks git --verbose --redact
 
 workflows:
   build-and-test:
