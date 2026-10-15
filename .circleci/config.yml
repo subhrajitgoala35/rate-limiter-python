@@ -1,5 +1,5 @@
-﻿version: 2.1
-
+﻿
+version: 2.1
 
 jobs:
   lint:
@@ -38,18 +38,15 @@ jobs:
         environment:
           DATABASE_URL: postgresql://appuser:devpassword@127.0.0.1:5432/ratelimiter
           REDIS_URL: redis://127.0.0.1:6379/0
-
       - image: cimg/postgres:16.4
         environment:
           POSTGRES_USER: appuser
           POSTGRES_PASSWORD: devpassword
           POSTGRES_DB: ratelimiter
-
       - image: cimg/redis:7.2
 
     steps:
       - checkout
-
       - run:
           name: Install dependencies
           command: |
@@ -111,6 +108,15 @@ jobs:
           name: Run integration tests
           command: python -m pytest tests/test_integration.py -v
 
+  secret-scan:
+    docker:
+      - image: zricethezav/gitleaks:latest
+    steps:
+      - checkout
+      - run:
+          name: Scan repository for secrets
+          command: gitleaks detect --source . --verbose --redact
+
 workflows:
   build-and-test:
     jobs:
@@ -128,12 +134,3 @@ workflows:
           requires:
             - lint
 
-        
-  secret-scan:
-    docker:
-      - image: zricethezav/gitleaks:latest
-    steps:
-      - checkout
-      - run:
-          name: Scan repository for secrets
-          command: gitleaks detect --source . --verbose --redact
