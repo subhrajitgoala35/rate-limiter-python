@@ -45,7 +45,7 @@ GET  /usage/{api_key}                counts by status, and the last ten calls
 GET  /explain/boundary?limit=5       the fixed-window flaw, as numbers
 
 Try it:  for i in $(seq 1 8); do curl -s -o /dev/null -w "%{http_code} " \
-           -H 'X-API-Key: k_demo_free' localhost:8080/api/time; done; echo
+           -H 'X-API-Key: YOUR_API_KEY_HERE' localhost:8080/api/time
 ```
 
 `/health` reports Postgres and Redis **separately**. If it says
