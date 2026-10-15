@@ -87,7 +87,7 @@ jobs:
       - run:
           name: Wait for Redis
           command: |
-            python - <<'PY'
+            python - \<<'PY'
             import time
             import redis
 
