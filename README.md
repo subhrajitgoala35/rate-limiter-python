@@ -97,16 +97,39 @@ database and no HTTP. Start your tests there. Use pytest:
 
 This is the one project where Redis is not a cache - it is the feature. The fixed-window limiter is a single INCR with an EXPIRE, issued in one pipeline so a counter can never be created without a TTL. The sliding window is a sorted set scored by timestamp: ZREMRANGEBYSCORE ages the old entries out, ZADD records this one, ZCARD counts what is left, all in one round trip. Doing either of these in Postgres would mean a write on every single request.
 
-## The hard part
+## The hard part: Comparing rate-limiting algorithms
 
-A sliding window is correct but harder than a fixed window. Fixed windows let someone send double the limit across a boundary.
+### 1. Boundary-burst problem
 
-Do not describe this - demonstrate it. `GET /explain/boundary` and the pure function `boundary_burst` give you the shape; write the unit test that proves a client sending 2 x limit requests inside a single 60-second span is fully allowed by `fixed_window_check` and partly refused by `sliding_log_check`. Then go the other way and say honestly what the sliding window costs: one sorted set per key that grows with every allowed request, a multi-command round trip instead of one INCR, and memory proportional to traffic rather than to the number of keys. Say which you would ship, and at what request rate you would change your mind. `sliding_counter_estimate` is the compromise most real gateways actually run - work out what it gets wrong.
+A fixed-window limiter counts requests within fixed time intervals, such as 10:00:00–10:00:59 and 10:01:00–10:01:59. When the counter resets, a client can send requests immediately before and after the boundary. Therefore, a client may send nearly twice the configured limit within a short period, even though neither individual window exceeds its limit.
 
-Write your answer in your README. It is worth more marks than the feature.
+For example, with a limit of 5 requests per minute, a client can send 5 requests near the end of one window and another 5 immediately after the next window begins. All 10 requests can be accepted within a few seconds.
 
----
+The `boundary_burst(limit)` function generates timestamps for this scenario. Passing those timestamps to `fixed_window_check` and `sliding_log_check` demonstrates the difference: the fixed-window algorithm can accept the burst, while the sliding-log algorithm rejects requests that exceed the limit within the trailing 60 seconds.
 
+The `GET /explain/boundary?limit=5` endpoint provides a way to inspect the boundary problem through the running application.
+
+### 2. Fixed window versus sliding log
+
+**Fixed window:** This approach maintains a counter for each API key and time window. It is efficient and requires relatively little memory. Redis can implement it using `INCR` and `EXPIRE`, executed through a pipeline or suitable script. However, the counter reset creates the boundary-burst problem.
+
+**Sliding log:** This approach stores request timestamps and counts only those within the most recent 60 seconds. It provides accurate rolling-window enforcement and avoids the fixed-window boundary burst. Its disadvantages are higher memory usage, because timestamps must be stored, and additional Redis operations to remove expired entries, record requests, and count the remaining entries.
+
+### 3. The sliding-counter compromise
+
+A sliding counter estimates the rolling request count using the current window's counter and the previous window's counter. It weights the previous counter according to how much of that window overlaps the trailing time interval.
+
+The estimate reduces the boundary-burst problem without storing every request timestamp. However, it is an approximation: it assumes requests were distributed evenly within the previous window. If requests were concentrated near one end of that window, the estimate can differ from the exact sliding-log count.
+
+The `sliding_counter_estimate` function should be compared with `sliding_log_check` using different timestamp distributions. This helps demonstrate when the estimate is close to the exact count and when the approximation differs.
+
+### 4. Shipping decision
+
+For a gateway where accurate rolling request limits are important and traffic per API key is moderate, I would initially ship the sliding-log approach. It provides exact rolling-window enforcement and is straightforward to reason about.
+
+I would monitor request volume per key, Redis memory consumption, and request latency. If timestamp storage or processing becomes too expensive at measured production traffic levels, I would benchmark a sliding-counter implementation and consider switching if its approximation meets the product's requirements.
+
+A fixed-window limiter remains appropriate when low overhead is more important than strict rolling-window enforcement. The choice should be based on measured traffic, resource usage, and the required accuracy rather than an arbitrary universal request-rate threshold.
 ## Getting unstuck
 
 | Symptom | Almost always |
